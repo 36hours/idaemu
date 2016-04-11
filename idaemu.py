@@ -4,7 +4,9 @@ from unicorn.x86_const import *
 from struct import pack
 from idaapi import get_func
 from idc import Qword
-
+import idc
+import idaapi
+import idautils
 
 PAGE_ALIGN = 1024 * 1024 # 1m
 
@@ -71,6 +73,59 @@ class Emu(object):
             uc.mem_write(sp, args[i])
             i += 1
 
+    def _showStatus(self, uc):
+        try:
+            if self.mode == UC_MODE_16:
+                ax = uc.reg_read(UC_X86_REG_AX)
+                bx = uc.reg_read(UC_X86_REG_BX)
+                cx = uc.reg_read(UC_X86_REG_CX)
+                dx = uc.reg_read(UC_X86_REG_DX)
+                di = uc.reg_read(UC_X86_REG_SI)
+                si = uc.reg_read(UC_X86_REG_DI)
+                bp = uc.reg_read(UC_X86_REG_BP)
+                sp = uc.reg_read(UC_X86_REG_SP)
+                ip = uc.reg_read(UC_X86_REG_IP)
+                eflags = uc.reg_read(UC_X86_REG_EFLAGS)
+                
+                print(">>> AX = 0x%x BX = 0x%x CX = 0x%x DX = 0x%x" % (ax, bx, cx, dx))
+                print(">>> DI = 0x%x SI = 0x%x BP = 0x%x SP = 0x%x" % (di, si, bp, sp))
+                print(">>> IP = 0x%x" % eip)
+                print(">>> EFLAGS = 0x%x" % eflags)
+            elif self.mode == UC_MODE_32:
+                eax = uc.reg_read(UC_X86_REG_EAX)
+                ebx = uc.reg_read(UC_X86_REG_EBX)
+                ecx = uc.reg_read(UC_X86_REG_ECX)
+                edx = uc.reg_read(UC_X86_REG_EDX)
+                edi = uc.reg_read(UC_X86_REG_ESI)
+                esi = uc.reg_read(UC_X86_REG_EDI)
+                ebp = uc.reg_read(UC_X86_REG_EBP)
+                esp = uc.reg_read(UC_X86_REG_ESP)
+                eip = uc.reg_read(UC_X86_REG_EIP)
+                eflags = uc.reg_read(UC_X86_REG_EFLAGS)
+                
+                print(">>> EAX = 0x%x EBX = 0x%x ECX = 0x%x EDX = 0x%x" % (eax, ebx, ecx, edx))
+                print(">>> EDI = 0x%x ESI = 0x%x EBP = 0x%x ESP = 0x%x" % (edi, esi, ebp, esp))
+                print(">>> EIP = 0x%x" % eip)
+                print(">>> EFLAGS = 0x%x" % eflags)
+            elif self.mode == UC_MODE_64:
+                rax = uc.reg_read(UC_X86_REG_RAX)
+                rbx = uc.reg_read(UC_X86_REG_RBX)
+                rcx = uc.reg_read(UC_X86_REG_RCX)
+                rdx = uc.reg_read(UC_X86_REG_RDX)
+                rdi = uc.reg_read(UC_X86_REG_RSI)
+                rsi = uc.reg_read(UC_X86_REG_RDI)
+                rbp = uc.reg_read(UC_X86_REG_RBP)
+                rsp = uc.reg_read(UC_X86_REG_RSP)
+                rip = uc.reg_read(UC_X86_REG_RIP)
+                eflags = uc.reg_read(UC_X86_REG_EFLAGS)
+                
+                print(">>> RAX = 0x%x RBX = 0x%x RCX = 0x%x RDX = 0x%x" % (rax, rbx, rcx, rdx))
+                print(">>> RDI = 0x%x RSI = 0x%x RBP = 0x%x RSP = 0x%x" % (rdi, rsi, rbp, rsp))
+                print(">>> RIP = 0x%x" % rip)
+                print(">>> EFLAGS = 0x%x" % eflags)   
+        except UcError as e:
+            print("#ERROR: %s" % e)
+			
     def setString(self, address, data, init=False):
         addr = self._alignAddr(address)
         size = PAGE_ALIGN
@@ -105,6 +160,13 @@ class Emu(object):
             print("Euclation done. Below is the Result:")
             res = uc.reg_read(self.RES_REG)
             print(">>> function result = %d" % res)
+            
+            self._showStatus(uc)
         except UcError as e:
             print("#ERROR: %s" % e)
-        
+			
+    def eSelCode(self):
+        codeStart = self._alignAddr(idc.SelStart())
+        codeEnd = self._alignAddr(idc.SelEnd())
+        print("%x" % codeStart)
+        print("%x" % codeEnd)
