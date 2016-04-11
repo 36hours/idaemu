@@ -71,6 +71,15 @@ class Emu(object):
             uc.mem_write(sp, args[i])
             i += 1
 
+    def setString(self, address, data, init=False):
+        addr = self._alignAddr(address)
+        size = PAGE_ALIGN
+        while addr + size < len(data): size += PAGE_ALIGN
+        uc.mem_map(addr, size)
+        if init: uc.mem_write(addr, self._getOriginData(addr, size))
+        uc.mem_write(address, data)
+        return address
+
     def eFunc(self, address, *args):
         func = get_func(address)
         funcSize = func.endEA - func.startEA
