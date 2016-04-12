@@ -12,15 +12,18 @@ COMPILE_GCC = 1
 COMPILE_MSVC = 2
 
 class Emu(object):    
-    def __init__(self, arch, mode, compiler=COMPILE_GCC, stack=0xf000000, ssize=3):
+    def __init__(self, arch, mode, compiler=COMPILE_GCC, stack=0xf000000, \
+                ssize=3, RA=0xdeadbeaf):
         assert(arch in [UC_ARCH_X86])
         self.arch = arch
         self.mode = mode
         self.compiler = compiler
         self.stack = self._alignAddr(stack)
         self.ssize = ssize
+        self.RA = RA # return address, for stop emulate
+        self.data = []
     
-    # callback for tracing invalid memory access (READ or WRITE)
+    # callback for tracing invalid memory access (READ or WRITE, FETCH)
     def _hook_mem_invalid(self, uc, access, address, size, value, user_data):
         addr = self._alignAddr(address)
         uc.mem_map(addr, PAGE_ALIGN)
@@ -71,14 +74,18 @@ class Emu(object):
             uc.mem_write(sp, args[i])
             i += 1
 
-    def setString(self, address, data, init=False):
-        addr = self._alignAddr(address)
-        size = PAGE_ALIGN
-        while addr + size < len(data): size += PAGE_ALIGN
-        uc.mem_map(addr, size)
-        if init: uc.mem_write(addr, self._getOriginData(addr, size))
-        uc.mem_write(address, data)
-        return address
+    def _initData(self, uc):
+        for address, data, init in self.data:
+            addr = self._alignAddr(address)
+            size = PAGE_ALIGN
+            while addr + size < len(data): size += PAGE_ALIGN
+            uc.mem_map(addr, size)
+            if init: uc.mem_write(addr, self._getOriginData(addr, size))
+            uc.mem_write(address, data)
+
+    # set the data before emulation
+    def setData(self, address, data, init=False):
+        self.data.append((address, data, init))
 
     def eFunc(self, address, *args):
         func = get_func(address)
@@ -88,19 +95,20 @@ class Emu(object):
             # init code
             addr = self._alignAddr(func.startEA)
             size = PAGE_ALIGN
-            while addr + size <= func.endEA: size += PAGE_ALIGN
+            while addr + size < func.endEA: size += PAGE_ALIGN
             uc.mem_map(addr, size)
-            code = self._getOriginData(func.startEA, funcSize)
-            uc.mem_write(func.startEA, code)
+            code = self._getOriginData(addr, size)
+            uc.mem_write(addr, code)
 
-            RA = addr + size - 1 # return addr, for stop emulate
-            self._initStackAndArgs(uc, RA, *args)
+            self._initStackAndArgs(uc, self.RA, *args)
+
+            self._initData(uc)
 
             # add the invalid memory access hook
-            uc.hook_add(UC_HOOK_MEM_READ_UNMAPPED | UC_HOOK_MEM_WRITE_UNMAPPED, \
-                        self._hook_mem_invalid)
+            uc.hook_add(UC_HOOK_MEM_READ_UNMAPPED | UC_HOOK_MEM_WRITE_UNMAPPED | \
+                        UC_HOOK_MEM_FETCH_UNMAPPED, self._hook_mem_invalid)
             # start emulate
-            uc.emu_start(func.startEA, RA)
+            uc.emu_start(func.startEA, self.RA)
             
             print("Euclation done. Below is the Result:")
             res = uc.reg_read(self.RES_REG)
