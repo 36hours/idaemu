@@ -23,6 +23,7 @@ class Emu(object):
         self.ssize = ssize
         self.RA = RA # return address, for stop emulate
         self.data = []
+        self.regs = []
     
     # callback for tracing invalid memory access (READ or WRITE, FETCH)
     def _hook_mem_invalid(self, uc, access, address, size, value, user_data):
@@ -85,6 +86,10 @@ class Emu(object):
             uc.mem_write(sp, pack('<Q', RA))
             self.RES_REG = UC_X86_REG_RAX
 
+    def _getBit(self, value, offset):
+        mask = 1 << offset
+        return 1 if (value & mask) > 0 else 0
+
     def _showStatus(self, uc):
         print(">>> status:")
         try:
@@ -100,10 +105,9 @@ class Emu(object):
                 ip = uc.reg_read(UC_X86_REG_IP)
                 eflags = uc.reg_read(UC_X86_REG_EFLAGS)
                 
-                print(">>> AX = 0x%x BX = 0x%x CX = 0x%x DX = 0x%x" % (ax, bx, cx, dx))
-                print(">>> DI = 0x%x SI = 0x%x BP = 0x%x SP = 0x%x" % (di, si, bp, sp))
-                print(">>> IP = 0x%x" % eip)
-                print(">>> EFLAGS = 0x%x" % eflags)
+                print("    AX = 0x%x BX = 0x%x CX = 0x%x DX = 0x%x" % (ax, bx, cx, dx))
+                print("    DI = 0x%x SI = 0x%x BP = 0x%x SP = 0x%x" % (di, si, bp, sp))
+                print("    IP = 0x%x" % eip)     
             elif self.mode == UC_MODE_32:
                 eax = uc.reg_read(UC_X86_REG_EAX)
                 ebx = uc.reg_read(UC_X86_REG_EBX)
@@ -116,10 +120,9 @@ class Emu(object):
                 eip = uc.reg_read(UC_X86_REG_EIP)
                 eflags = uc.reg_read(UC_X86_REG_EFLAGS)
                 
-                print(">>> EAX = 0x%x EBX = 0x%x ECX = 0x%x EDX = 0x%x" % (eax, ebx, ecx, edx))
-                print(">>> EDI = 0x%x ESI = 0x%x EBP = 0x%x ESP = 0x%x" % (edi, esi, ebp, esp))
-                print(">>> EIP = 0x%x" % eip)
-                print(">>> EFLAGS = 0x%x" % eflags)
+                print("    EAX = 0x%x EBX = 0x%x ECX = 0x%x EDX = 0x%x" % (eax, ebx, ecx, edx))
+                print("    EDI = 0x%x ESI = 0x%x EBP = 0x%x ESP = 0x%x" % (edi, esi, ebp, esp))
+                print("    EIP = 0x%x" % eip)
             elif self.mode == UC_MODE_64:
                 rax = uc.reg_read(UC_X86_REG_RAX)
                 rbx = uc.reg_read(UC_X86_REG_RBX)
@@ -130,12 +133,41 @@ class Emu(object):
                 rbp = uc.reg_read(UC_X86_REG_RBP)
                 rsp = uc.reg_read(UC_X86_REG_RSP)
                 rip = uc.reg_read(UC_X86_REG_RIP)
+                r8 = uc.reg_read(UC_X86_REG_R8)
+                r9 = uc.reg_read(UC_X86_REG_R9)
+                r10 = uc.reg_read(UC_X86_REG_R10)
+                r11 = uc.reg_read(UC_X86_REG_R11)
+                r12 = uc.reg_read(UC_X86_REG_R12)
+                r13 = uc.reg_read(UC_X86_REG_R13)
+                r14 = uc.reg_read(UC_X86_REG_R14)
+                r15 = uc.reg_read(UC_X86_REG_R15)
                 eflags = uc.reg_read(UC_X86_REG_EFLAGS)
                 
-                print(">>> RAX = 0x%x RBX = 0x%x RCX = 0x%x RDX = 0x%x" % (rax, rbx, rcx, rdx))
-                print(">>> RDI = 0x%x RSI = 0x%x RBP = 0x%x RSP = 0x%x" % (rdi, rsi, rbp, rsp))
-                print(">>> RIP = 0x%x" % rip)
-                print(">>> EFLAGS = 0x%x" % eflags)   
+                print("    RAX = 0x%x RBX = 0x%x RCX = 0x%x RDX = 0x%x" % (rax, rbx, rcx, rdx))
+                print("    RDI = 0x%x RSI = 0x%x RBP = 0x%x RSP = 0x%x" % (rdi, rsi, rbp, rsp))
+                print("    R8 = 0x%x R9 = 0x%x R10 = 0x%x R11 = 0x%x R12 = 0x%x " \
+                        "R13 = 0x%x R14 = 0x%x R15 = 0x%x" % (r8, r9, r10, r11, r12, r13, r14, r15))
+                print("    RIP = 0x%x" % rip)
+            print("    EFLAGS:")
+            print("    CF=%d PF=%d AF=%d ZF=%d SF=%d TF=%d IF=%d DF=%d OF=%d IOPL=%d " \
+                    "NT=%d RF=%d VM=%d AC=%d VIF=%d VIP=%d ID=%d"
+                    % (self._getBit(eflags, 0),
+                       self._getBit(eflags, 2),
+                       self._getBit(eflags, 4),
+                       self._getBit(eflags, 6),
+                       self._getBit(eflags, 7),
+                       self._getBit(eflags, 8),
+                       self._getBit(eflags, 9),
+                       self._getBit(eflags, 10),
+                       self._getBit(eflags, 11),
+                       self._getBit(eflags, 12) + self._getBit(eflags, 13) * 2,
+                       self._getBit(eflags, 14),
+                       self._getBit(eflags, 16),
+                       self._getBit(eflags, 17),
+                       self._getBit(eflags, 18),
+                       self._getBit(eflags, 19),
+                       self._getBit(eflags, 20),
+                       self._getBit(eflags, 21)))
         except UcError as e:
             print("#ERROR: %s" % e)
 
@@ -148,9 +180,16 @@ class Emu(object):
             if init: uc.mem_write(addr, self._getOriginData(addr, size))
             uc.mem_write(address, data)
 
+    def _initRegs(self, uc):
+        for reg, value in self.regs:
+            uc.reg_write(reg, value)
+
     # set the data before emulation
     def setData(self, address, data, init=False):
         self.data.append((address, data, init))
+
+    def setReg(self, reg, value):
+        self.regs.append((reg, value))
 
     def eFunc(self, address, *args):
         func = get_func(address)
@@ -159,8 +198,8 @@ class Emu(object):
             uc = Uc(self.arch, self.mode)
 
             self._initStackAndArgs(uc, self.RA, *args)
-
             self._initData(uc)
+            self._initRegs(uc)
 
             # add the invalid memory access hook
             uc.hook_add(UC_HOOK_MEM_READ_UNMAPPED | UC_HOOK_MEM_WRITE_UNMAPPED | \
@@ -183,17 +222,17 @@ class Emu(object):
         print(">>> end:0x%x" % codeEnd)
         try:
             uc = Uc(self.arch, self.mode)
-            addr = self._alignAddr(codeStart)
-            size = PAGE_ALIGN
-            while addr + size <= codeEnd: size += PAGE_ALIGN
-            uc.mem_map(addr, size)
             code = self._getOriginData(codeStart, codesize)
             print(">>> opcode:", code.encode('hex'))
-            uc.mem_write(addr, code)
-            RA = addr + size - 1
-            self._initStack(uc, RA)
-            uc.hook_add(UC_HOOK_MEM_READ_UNMAPPED | UC_HOOK_MEM_WRITE_UNMAPPED, self._hook_mem_invalid)
-            uc.emu_start(addr, addr + codesize)
+            
+            self._initStack(uc, self.RA)
+            self._initData(uc)
+            self._initRegs(uc)
+            
+            # add the invalid memory access hook
+            uc.hook_add(UC_HOOK_MEM_READ_UNMAPPED | UC_HOOK_MEM_WRITE_UNMAPPED | \
+                        UC_HOOK_MEM_FETCH_UNMAPPED, self._hook_mem_invalid)
+            uc.emu_start(codeStart, codeEnd)
             self._showStatus(uc)
         except UcError as e:
             print("#ERROR: %s" % e)	
