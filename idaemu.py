@@ -3,9 +3,9 @@ from unicorn import *
 from unicorn.x86_const import *
 from struct import pack
 from idaapi import get_func
-from idc import Qword, GetManyBytes
-import idc
-import idaapi
+from idc import Qword, GetManyBytes, SelStart, SelEnd
+from debug import Loger
+from debug import Hooker
 
 PAGE_ALIGN = 0x1000 # 4k
 
@@ -24,9 +24,12 @@ class Emu(object):
         self.RA = RA # return address, for stop emulate
         self.data = []
         self.regs = []
+        self.curUC = None
     
     # callback for tracing invalid memory access (READ or WRITE, FETCH)
     def _hook_mem_invalid(self, uc, access, address, size, value, user_data):
+        Loger.append(">>> Missing memory is being WRITE at 0x%x, data size = %u, data value = 0x%x" \
+                % (address, size, value))
         addr = self._alignAddr(address)
         uc.mem_map(addr, PAGE_ALIGN)
         data = self._getOriginData(addr, PAGE_ALIGN)
@@ -48,25 +51,6 @@ class Emu(object):
         return res[:size]
 
     def _initStackAndArgs(self, uc, RA, *args):
-        self._initStack(uc, RA)
-        if self.mode == UC_MODE_64:
-            if self.compiler == COMPILE_GCC:
-                regs = [UC_X86_REG_RDI, UC_X86_REG_RSI, UC_X86_REG_RDX, UC_X86_REG_RCX, 
-                        UC_X86_REG_R8, UC_X86_REG_R9]
-            elif self.compiler == COMPILE_MSVC:
-                regs = [UC_X86_REG_RCX, UC_X86_REG_RDX, UC_X86_REG_R8, UC_X86_REG_R9]
-        
-        ## init the arguments
-        i = 0
-        while i < len(regs) and i < len(args):
-            uc.reg_write(regs[i], args[i])
-            i += 1
-        while i < len(args):
-            sp += step
-            uc.mem_write(sp, args[i])
-            i += 1
-
-    def _initStack(self, uc, RA):
         uc.mem_map(self.stack, (self.ssize+1) * PAGE_ALIGN)
         sp = self.stack + self.ssize * PAGE_ALIGN
         regs = []
@@ -85,13 +69,28 @@ class Emu(object):
             uc.reg_write(UC_X86_REG_RSP, sp)
             uc.mem_write(sp, pack('<Q', RA))
             self.RES_REG = UC_X86_REG_RAX
+            if self.compiler == COMPILE_GCC:
+                regs = [UC_X86_REG_RDI, UC_X86_REG_RSI, UC_X86_REG_RDX, UC_X86_REG_RCX, 
+                        UC_X86_REG_R8, UC_X86_REG_R9]
+            elif self.compiler == COMPILE_MSVC:
+                regs = [UC_X86_REG_RCX, UC_X86_REG_RDX, UC_X86_REG_R8, UC_X86_REG_R9]
+        
+        ## init the arguments
+        i = 0
+        while i < len(regs) and i < len(args):
+            uc.reg_write(regs[i], args[i])
+            i += 1
+        while i < len(args):
+            sp += step
+            uc.mem_write(sp, args[i])
+            i += 1
 
     def _getBit(self, value, offset):
         mask = 1 << offset
         return 1 if (value & mask) > 0 else 0
 
-    def _showStatus(self, uc):
-        print(">>> status:")
+    def _showRegs(self, uc):
+        print(">>> regs:")
         try:
             if self.mode == UC_MODE_16:
                 ax = uc.reg_read(UC_X86_REG_AX)
@@ -191,6 +190,19 @@ class Emu(object):
     def setReg(self, reg, value):
         self.regs.append((reg, value))
 
+    def showRegs(self, *regs):
+        if self.curUC == None:
+            print("current uc is none.")
+            return
+        for reg in regs:
+            print("0x%x" % self.curUC.reg_read(reg))
+            
+    def showData(self, addr, dataSize, count = 1):
+        if self.curUC == None:
+            print("current uc is none.")
+            return
+            
+        
     def eFunc(self, address, *args):
         func = get_func(address)
         funcSize = func.endEA - func.startEA
@@ -200,6 +212,7 @@ class Emu(object):
             self._initStackAndArgs(uc, self.RA, *args)
             self._initData(uc)
             self._initRegs(uc)
+            self.curUC = uc
 
             # add the invalid memory access hook
             uc.hook_add(UC_HOOK_MEM_READ_UNMAPPED | UC_HOOK_MEM_WRITE_UNMAPPED | \
@@ -210,13 +223,12 @@ class Emu(object):
             print("Euclation done. Below is the Result:")
             res = uc.reg_read(self.RES_REG)
             print(">>> function result = %d" % res)
-            self._showStatus(uc)
         except UcError as e:
             print("#ERROR: %s" % e)
         
     def eBlock(self):
-        codeStart = idc.SelStart()
-        codeEnd = idc.SelEnd()
+        codeStart = SelStart()
+        codeEnd = SelEnd()
         codesize = codeEnd - codeStart
         print(">>> start:0x%x" % codeStart)
         print(">>> end:0x%x" % codeEnd)
@@ -225,14 +237,19 @@ class Emu(object):
             code = self._getOriginData(codeStart, codesize)
             print(">>> opcode:", code.encode('hex'))
             
-            self._initStack(uc, self.RA)
+            self._initStackAndArgs(uc, self.RA)
             self._initData(uc)
             self._initRegs(uc)
+            self.curUC = uc
             
             # add the invalid memory access hook
             uc.hook_add(UC_HOOK_MEM_READ_UNMAPPED | UC_HOOK_MEM_WRITE_UNMAPPED | \
                         UC_HOOK_MEM_FETCH_UNMAPPED, self._hook_mem_invalid)
+                        
+            #Hooker.debugHook(uc, codeStart, codeEnd)
+            Loger.setEnable(True)
             uc.emu_start(codeStart, codeEnd)
-            self._showStatus(uc)
+            Loger.show()
+            self._showRegs(uc)
         except UcError as e:
             print("#ERROR: %s" % e)	
