@@ -3,10 +3,10 @@ from unicorn import *
 from unicorn.x86_const import *
 from struct import pack
 from idaapi import get_func
-from idc import Qword
+from idc import Qword, GetManyBytes
 
 
-PAGE_ALIGN = 1024 * 1024 # 1m
+PAGE_ALIGN = 0x1000 # 4k
 
 COMPILE_GCC = 1
 COMPILE_MSVC = 2
@@ -35,7 +35,13 @@ class Emu(object):
         return addr // PAGE_ALIGN * PAGE_ALIGN
 
     def _getOriginData(self, address, size):
-        res = [pack("<Q", Qword(address + offset)) for offset in xrange(0, size+8, 8)]
+        res = []
+        for offset in xrange(0, size, 64):
+            tmp = GetManyBytes(address + offset, 64)
+            if tmp == None:
+                res.extend([pack("<Q", Qword(address + offset + i)) for i in range(0, 64, 8)])
+            else:
+                res.append(tmp)
         res = "".join(res)
         return res[:size]
 
@@ -92,13 +98,6 @@ class Emu(object):
         funcSize = func.endEA - func.startEA
         try:
             uc = Uc(self.arch, self.mode)
-            # init code
-            addr = self._alignAddr(func.startEA)
-            size = PAGE_ALIGN
-            while addr + size < func.endEA: size += PAGE_ALIGN
-            uc.mem_map(addr, size)
-            code = self._getOriginData(addr, size)
-            uc.mem_write(addr, code)
 
             self._initStackAndArgs(uc, self.RA, *args)
 
