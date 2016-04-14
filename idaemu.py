@@ -1,6 +1,8 @@
 from __future__ import print_function
 from unicorn import *
 from unicorn.x86_const import *
+from unicorn.arm_const import *
+from unicorn.arm64_const import *
 from struct import pack
 from idaapi import get_func
 from idc import Qword, GetManyBytes, SelStart, SelEnd
@@ -18,7 +20,8 @@ TRACE_CODE = 4
 class Emu(object):    
     def __init__(self, arch, mode, compiler=COMPILE_GCC, stack=0xf000000, \
                 ssize=3, RA=0xdeadbeaf):
-        assert(arch in [UC_ARCH_X86])
+        assert(arch in [UC_ARCH_X86, UC_ARCH_ARM, UC_ARCH_ARM64])
+        if mode in [UC_MODE_16, UC_MODE_THUMB]: RA &= 0xffff
         self.arch = arch
         self.mode = mode
         self.compiler = compiler
@@ -71,26 +74,43 @@ class Emu(object):
         uc.mem_map(self.stack, (self.ssize+1) * PAGE_ALIGN)
         sp = self.stack + self.ssize * PAGE_ALIGN
         regs = []
-        if self.mode == UC_MODE_16:
-            step = 2
-            uc.reg_write(UC_X86_REG_SP, sp)
-            uc.mem_write(sp, pack('<H', RA))
-            self.RES_REG = UC_X86_REG_AX
-        elif self.mode == UC_MODE_32:
-            step = 4
-            uc.reg_write(UC_X86_REG_ESP, sp)
-            uc.mem_write(sp, pack('<I', RA))
-            self.RES_REG = UC_X86_REG_EAX
-        elif self.mode == UC_MODE_64:
+        if self.arch == UC_ARCH_X86:
+            if self.mode == UC_MODE_16:
+                step = 2
+                uc.reg_write(UC_X86_REG_SP, sp)
+                uc.mem_write(sp, pack('<H', RA))
+                self.RES_REG = UC_X86_REG_AX
+            elif self.mode == UC_MODE_32:
+                step = 4
+                uc.reg_write(UC_X86_REG_ESP, sp)
+                uc.mem_write(sp, pack('<I', RA))
+                self.RES_REG = UC_X86_REG_EAX
+            elif self.mode == UC_MODE_64:
+                step = 8
+                uc.reg_write(UC_X86_REG_RSP, sp)
+                uc.mem_write(sp, pack('<Q', RA))
+                self.RES_REG = UC_X86_REG_RAX
+                if self.compiler == COMPILE_GCC:
+                    regs = [UC_X86_REG_RDI, UC_X86_REG_RSI, UC_X86_REG_RDX, UC_X86_REG_RCX, 
+                            UC_X86_REG_R8, UC_X86_REG_R9]
+                elif self.compiler == COMPILE_MSVC:
+                    regs = [UC_X86_REG_RCX, UC_X86_REG_RDX, UC_X86_REG_R8, UC_X86_REG_R9]
+        elif self.arch == UC_ARCH_ARM:
+            if self.mode == UC_MODE_ARM:
+                step = 4
+            elif self.mode == UC_MODE_THUMB:
+                step = 2
+            uc.reg_write(UC_ARM_REG_SP, sp)
+            uc.reg_write(UC_ARM_REG_LR, RA)
+            self.RES_REG = UC_ARM_REG_R0
+            regs = [UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3]
+        elif self.arch == UC_ARCH_ARM64:
             step = 8
-            uc.reg_write(UC_X86_REG_RSP, sp)
-            uc.mem_write(sp, pack('<Q', RA))
-            self.RES_REG = UC_X86_REG_RAX
-            if self.compiler == COMPILE_GCC:
-                regs = [UC_X86_REG_RDI, UC_X86_REG_RSI, UC_X86_REG_RDX, UC_X86_REG_RCX, 
-                        UC_X86_REG_R8, UC_X86_REG_R9]
-            elif self.compiler == COMPILE_MSVC:
-                regs = [UC_X86_REG_RCX, UC_X86_REG_RDX, UC_X86_REG_R8, UC_X86_REG_R9]
+            uc.reg_write(UC_ARM64_REG_SP, sp)
+            uc.reg_write(UC_ARM64_REG_X30, RA)
+            self.RES_REG = UC_ARM64_REG_X0
+            regs = [UC_ARM64_REG_X0, UC_ARM64_REG_X1, UC_ARM64_REG_X2, UC_ARM64_REG_X3,
+                    UC_ARM64_REG_X4, UC_ARM64_REG_X5, UC_ARM64_REG_X6, UC_ARM64_REG_X7]
         
         ## init the arguments
         i = 0

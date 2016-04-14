@@ -5,7 +5,9 @@ idaemu is an IDA Pro Plugin - use for emulating code in IDA Pro. it is base on [
 
 Support architecture:
 - X86 (16, 32, 64-bit) 
-- ARM (developing)
+- ARM 
+- ARM64 (ARMv8)
+- MIPS (developing)
 
 Now it is not support call the library functions.
 
@@ -21,7 +23,7 @@ License
 This project is released under the [GPL license](COPYING).
 
 
-Example
+Example1
 -------
 
 This is easy function for add. 
@@ -54,3 +56,39 @@ Get the function result:
 Euclation done. Below is the Result:
 >>> function result = 107
 ```
+
+
+Example2
+-------
+
+Sometimes it emulates fail with some abort:
+``` 
+Python>from idaemu import *
+Python>a = Emu(UC_ARCH_ARM, UC_MODE_THUMB)
+Python>a.eFunc(here(), 4)
+#ERROR: Invalid instruction (UC_ERR_INSN_INVALID)
+Euclation done. Below is the Result:
+>>> function result = 1048576
+```
+
+Then we can use `setTrace` and `showTrace` for debugging.
+
+```
+Python>from idaemu import *
+Python>a = Emu(UC_ARCH_ARM, UC_MODE_THUMB)
+Python>a.setTrace(TRACE_CODE)
+Python>a.eFunc(here(), 4)
+#ERROR: Invalid instruction (UC_ERR_INSN_INVALID)
+Euclation done. Below is the Result:
+>>> function result = 1048576
+Python>a.showTrace()
+### Trace Instruction at 0x13dc, size = 2
+### Trace Instruction at 0x13de, size = 2
+### Trace Instruction at 0x13e0, size = 2
+......
+### Trace Instruction at 0x19c6, size = 2
+### Trace Instruction at 0x19c8, size = 2
+### Trace Instruction at 0x19ca, size = 2
+### Trace Instruction at 0xbeae, size = 2
+```
+So we found the abort reason (the default RA is wrong)
