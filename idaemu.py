@@ -239,11 +239,18 @@ class Emu(object):
         for reg in regs:
             print("0x%x" % self.curUC.reg_read(reg))
             
-    def showData(self, addr, dataSize, count = 1):
+    def showData(self, fmt, addr, count = 1):
         if self.curUC == None:
             print("current uc is none.")
             return
-    
+        if count > 1: print('[', end="")
+        for i in range(count):
+            dataSize = struct.calcsize(fmt)
+            data = self.curUC.mem_read(addr + i * dataSize, dataSize)
+            print(struct.unpack_from(fmt, data)[0], end="")
+            if count > 1 and i < count - 1: print(',', end="")
+        print(']') if count > 1 else print('')
+        
     def setTrace(self, opt):
         if opt != TRACE_OFF:
             self.traceOption |= opt
