@@ -265,7 +265,7 @@ class Emu(object):
             return
         if count > 1: print('[')
         for i in range(count):
-            dataSize = struct.calcsize(fmt)
+            dataSize = calcsize(fmt)
             data = self.curUC.mem_read(addr + i * dataSize, dataSize)
             if count > 1: print('    ', end='')
             st = unpack_from(fmt, data)
