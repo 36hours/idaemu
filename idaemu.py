@@ -4,13 +4,16 @@ from unicorn.x86_const import *
 from struct import pack
 from idaapi import get_func
 from idc import Qword, GetManyBytes, SelStart, SelEnd
-from debug import Loger
-from debug import Hooker
 
 PAGE_ALIGN = 0x1000 # 4k
 
 COMPILE_GCC = 1
 COMPILE_MSVC = 2
+
+TRACE_OFF = 0
+TRACE_DATA_READ = 1
+TRACE_DATA_WRITE = 2
+TRACE_CODE = 4
 
 class Emu(object):    
     def __init__(self, arch, mode, compiler=COMPILE_GCC, stack=0xf000000, \
@@ -25,16 +28,30 @@ class Emu(object):
         self.data = []
         self.regs = []
         self.curUC = None
+        self.traceOption = TRACE_OFF
+        self.logBuffer = []
     
+    def _addTrace(self, logInfo):
+        self.logBuffer.append(logInfo)
+
     # callback for tracing invalid memory access (READ or WRITE, FETCH)
     def _hook_mem_invalid(self, uc, access, address, size, value, user_data):
-        Loger.append(">>> Missing memory is being WRITE at 0x%x, data size = %u, data value = 0x%x" \
-                % (address, size, value))
         addr = self._alignAddr(address)
         uc.mem_map(addr, PAGE_ALIGN)
         data = self._getOriginData(addr, PAGE_ALIGN)
         uc.mem_write(addr, data)
         return True
+
+    def _hook_mem_access(self, uc, access, address, size, value, user_data):
+        if access == UC_MEM_WRITE and self.traceOption & TRACE_DATA_WRITE:
+            self._addTrace("### Memory WRITE at 0x%x, data size = %u, data value = 0x%x" \
+                    %(address, size, value))
+        elif access == UC_MEM_READ and self.traceOption & TRACE_DATA_READ:
+            self._addTrace("### Memory READ at 0x%x, data size = %u" \
+                    %(address, size))  
+
+    def _hook_code(self, uc, address, size, user_data):
+        self._addTrace("### Trace Instruction at 0x%x, size = %u" %(address, size))
 
     def _alignAddr(self, addr):
         return addr // PAGE_ALIGN * PAGE_ALIGN
@@ -183,6 +200,31 @@ class Emu(object):
         for reg, value in self.regs:
             uc.reg_write(reg, value)
 
+    def _emulate(self, startAddr, stopAddr, *args):
+        try:
+            self.logBuffer = []
+            uc = Uc(self.arch, self.mode)
+            self.curUC = uc
+            
+            self._initStackAndArgs(uc, stopAddr, *args)
+            self._initData(uc)
+            self._initRegs(uc)
+            
+            # add the invalid memory access hook
+            uc.hook_add(UC_HOOK_MEM_READ_UNMAPPED | UC_HOOK_MEM_WRITE_UNMAPPED | \
+                        UC_HOOK_MEM_FETCH_UNMAPPED, self._hook_mem_invalid)    
+            
+            # add the trace hook
+            if self.traceOption & (TRACE_DATA_READ | TRACE_DATA_WRITE) :
+                uc.hook_add(UC_HOOK_MEM_READ | UC_HOOK_MEM_WRITE, self._hook_mem_access)
+            if self.traceOption & TRACE_CODE :
+                uc.hook_add(UC_HOOK_CODE, self._hook_code)
+
+            # start emulate
+            uc.emu_start(startAddr, stopAddr)
+        except UcError as e:
+            print("#ERROR: %s" % e)
+
     # set the data before emulation
     def setData(self, address, data, init=False):
         self.data.append((address, data, init))
@@ -201,55 +243,27 @@ class Emu(object):
         if self.curUC == None:
             print("current uc is none.")
             return
-            
-        
+    
+    def setTrace(self, opt):
+        if opt != TRACE_OFF:
+            self.traceOption |= opt
+        else:
+            self.traceOption = TRACE_OFF
+
+    def showTrace(self):
+        logs = "\n".join(self.logBuffer)
+        print(logs)
+
     def eFunc(self, address, *args):
         func = get_func(address)
-        funcSize = func.endEA - func.startEA
-        try:
-            uc = Uc(self.arch, self.mode)
-
-            self._initStackAndArgs(uc, self.RA, *args)
-            self._initData(uc)
-            self._initRegs(uc)
-            self.curUC = uc
-
-            # add the invalid memory access hook
-            uc.hook_add(UC_HOOK_MEM_READ_UNMAPPED | UC_HOOK_MEM_WRITE_UNMAPPED | \
-                        UC_HOOK_MEM_FETCH_UNMAPPED, self._hook_mem_invalid)
-            # start emulate
-            uc.emu_start(func.startEA, self.RA)
-            
-            print("Euclation done. Below is the Result:")
-            res = uc.reg_read(self.RES_REG)
-            print(">>> function result = %d" % res)
-        except UcError as e:
-            print("#ERROR: %s" % e)
+        self._emulate(func.startEA, self.RA, *args)
+        print("Euclation done. Below is the Result:")
+        res = self.curUC.reg_read(self.RES_REG)
+        print(">>> function result = %d" % res)
         
     def eBlock(self):
         codeStart = SelStart()
         codeEnd = SelEnd()
-        codesize = codeEnd - codeStart
-        print(">>> start:0x%x" % codeStart)
-        print(">>> end:0x%x" % codeEnd)
-        try:
-            uc = Uc(self.arch, self.mode)
-            code = self._getOriginData(codeStart, codesize)
-            print(">>> opcode:", code.encode('hex'))
-            
-            self._initStackAndArgs(uc, self.RA)
-            self._initData(uc)
-            self._initRegs(uc)
-            self.curUC = uc
-            
-            # add the invalid memory access hook
-            uc.hook_add(UC_HOOK_MEM_READ_UNMAPPED | UC_HOOK_MEM_WRITE_UNMAPPED | \
-                        UC_HOOK_MEM_FETCH_UNMAPPED, self._hook_mem_invalid)
-                        
-            #Hooker.debugHook(uc, codeStart, codeEnd)
-            Loger.setEnable(True)
-            uc.emu_start(codeStart, codeEnd)
-            Loger.show()
-            self._showRegs(uc)
-        except UcError as e:
-            print("#ERROR: %s" % e)	
+        self._emulate(codeStart, codeEnd)
+        self._showRegs(self.curUC)
+        
