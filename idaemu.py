@@ -1,7 +1,7 @@
 from __future__ import print_function
 from unicorn import *
 from unicorn.x86_const import *
-from struct import pack
+from struct import pack, unpack_from, calcsize
 from idaapi import get_func
 from idc import Qword, GetManyBytes, SelStart, SelEnd
 
@@ -238,17 +238,19 @@ class Emu(object):
             return
         for reg in regs:
             print("0x%x" % self.curUC.reg_read(reg))
-            
+
     def showData(self, fmt, addr, count = 1):
         if self.curUC == None:
             print("current uc is none.")
             return
-        if count > 1: print('[', end="")
+        if count > 1: print('[')
         for i in range(count):
             dataSize = struct.calcsize(fmt)
             data = self.curUC.mem_read(addr + i * dataSize, dataSize)
-            print(struct.unpack_from(fmt, data)[0], end="")
-            if count > 1 and i < count - 1: print(',', end="")
+            if count > 1: print('    ', end='')
+            st = unpack_from(fmt, data)
+            print(st[0], end='') if len(st) == 1 else print(st, end='')
+            if count > 1: print(',')
         print(']') if count > 1 else print('')
         
     def setTrace(self, opt):
