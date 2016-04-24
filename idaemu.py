@@ -5,7 +5,8 @@ from unicorn.arm_const import *
 from unicorn.arm64_const import *
 from struct import pack, unpack_from, calcsize
 from idaapi import get_func
-from idc import Qword, GetManyBytes, SelStart, SelEnd
+from idc import Qword, GetManyBytes, SelStart, SelEnd, here, ItemSize
+from idautils import XrefsTo
 
 PAGE_ALIGN = 0x1000 # 4k
 
@@ -283,16 +284,22 @@ class Emu(object):
         logs = "\n".join(self.logBuffer)
         print(logs)
 
-    def eFunc(self, address, *args):
+    def eFunc(self, address=None, *args):
+        if address == None: address = here()
         func = get_func(address)
-        self._emulate(func.startEA, self.RA, *args)
+        refs = [ref.frm for ref in XrefsTo(func.startEA, 0)]
+        if len(refs) == 0:
+            RA = self.RA
+        else:
+            RA = refs[0] + ItemSize(refs[0])
+        self._emulate(func.startEA, RA, *args)
         print("Euclation done. Below is the Result:")
         res = self.curUC.reg_read(self.RES_REG)
         print(">>> function result = %d" % res)
         
-    def eBlock(self):
-        codeStart = SelStart()
-        codeEnd = SelEnd()
+    def eBlock(self, codeStart=None, codeEnd=None):
+        if codeStart == None: codeStart = SelStart()
+        if codeEnd == None: codeEnd = SelEnd()
         self._emulate(codeStart, codeEnd)
         self._showRegs(self.curUC)
         
