@@ -3,7 +3,7 @@ from unicorn import *
 from unicorn.x86_const import *
 from unicorn.arm_const import *
 from unicorn.arm64_const import *
-from struct import pack, unpack_from, calcsize
+from struct import unpack, pack, unpack_from, calcsize
 from idaapi import get_func
 from idc import Qword, GetManyBytes, SelStart, SelEnd, here, ItemSize
 from idautils import XrefsTo
@@ -20,20 +20,20 @@ TRACE_CODE = 4
 
 class Emu(object):    
     def __init__(self, arch, mode, compiler=COMPILE_GCC, stack=0xf000000, \
-                ssize=3, RA=0xdeadbeaf):
+                ssize=3):
         assert(arch in [UC_ARCH_X86, UC_ARCH_ARM, UC_ARCH_ARM64])
-        if mode in [UC_MODE_16, UC_MODE_THUMB]: RA &= 0xffff
         self.arch = arch
         self.mode = mode
         self.compiler = compiler
         self.stack = self._alignAddr(stack)
         self.ssize = ssize
-        self.RA = RA # return address, for stop emulate
         self.data = []
         self.regs = []
         self.curUC = None
         self.traceOption = TRACE_OFF
         self.logBuffer = []
+        self.altFunc = {}
+        self._init()
     
     def _addTrace(self, logInfo):
         self.logBuffer.append(logInfo)
@@ -55,7 +55,40 @@ class Emu(object):
                     %(address, size))  
 
     def _hook_code(self, uc, address, size, user_data):
-        self._addTrace("### Trace Instruction at 0x%x, size = %u" %(address, size))
+        if self.traceOption & TRACE_CODE:
+            self._addTrace("### Trace Instruction at 0x%x, size = %u" %(address, size))
+        if address in self.altFunc.keys():
+            func, argc, balance = self.altFunc[address]
+            try:
+                sp = uc.reg_read(self.REG_SP)
+                if self.REG_RA == 0:
+                    RA = unpack(self.pack_fmt, str(uc.mem_read(sp, self.step)))[0]
+                    sp += self.step
+                else:
+                    RA = uc.reg_read(self.REG_RA)
+
+                args = []
+                i = 0
+                while i < argc and i < len(self.REG_ARGS):
+                    args.append(uc.reg_read(self.REG_ARGS[i]))
+                    i += 1
+                sp2 = sp 
+                while i < argc:
+                    args.append(unpack(self.pack_fmt, str(uc.mem_read(sp2, self.step)))[0])
+                    sp2 += self.step
+                    i += 1
+
+                res = func(uc, self.logBuffer, args)
+                if type(res) != int: res = 0
+                uc.reg_write(self.REG_RES, res)
+                uc.reg_write(self.REG_PC, RA)
+                if balance:
+                    uc.reg_write(self.REG_SP, sp2)
+                else:
+                    uc.reg_write(self.REG_SP, sp)
+            except Exception as e:
+                self._addTrace("alt exception: %s" % e)
+
 
     def _alignAddr(self, addr):
         return addr // PAGE_ALIGN * PAGE_ALIGN
@@ -71,56 +104,75 @@ class Emu(object):
         res = "".join(res)
         return res[:size]
 
-    def _initStackAndArgs(self, uc, RA, *args):
-        uc.mem_map(self.stack, (self.ssize+1) * PAGE_ALIGN)
-        sp = self.stack + self.ssize * PAGE_ALIGN
-        regs = []
+    def _init(self):
         if self.arch == UC_ARCH_X86:
             if self.mode == UC_MODE_16:
-                step = 2
-                uc.reg_write(UC_X86_REG_SP, sp)
-                uc.mem_write(sp, pack('<H', RA))
-                self.RES_REG = UC_X86_REG_AX
+                self.step = 2
+                self.pack_fmt = '<H'
+                self.REG_PC = UC_X86_REG_PC
+                self.REG_SP = UC_X86_REG_SP
+                self.REG_RA = 0
+                self.REG_RES = UC_X86_REG_AX
+                self.REG_ARGS = []
             elif self.mode == UC_MODE_32:
-                step = 4
-                uc.reg_write(UC_X86_REG_ESP, sp)
-                uc.mem_write(sp, pack('<I', RA))
-                self.RES_REG = UC_X86_REG_EAX
+                self.step = 4
+                self.pack_fmt = '<I'
+                self.REG_PC = UC_X86_REG_EIP
+                self.REG_SP = UC_X86_REG_ESP
+                self.REG_RA = 0
+                self.REG_RES = UC_X86_REG_EAX
+                self.REG_ARGS = []
             elif self.mode == UC_MODE_64:
-                step = 8
-                uc.reg_write(UC_X86_REG_RSP, sp)
-                uc.mem_write(sp, pack('<Q', RA))
-                self.RES_REG = UC_X86_REG_RAX
+                self.step = 8
+                self.pack_fmt = '<Q'
+                self.REG_PC = UC_X86_REG_RIP
+                self.REG_SP = UC_X86_REG_RSP
+                self.REG_RA = 0
+                self.REG_RES = UC_X86_REG_RAX
                 if self.compiler == COMPILE_GCC:
-                    regs = [UC_X86_REG_RDI, UC_X86_REG_RSI, UC_X86_REG_RDX, UC_X86_REG_RCX, 
+                    self.REG_ARGS = [UC_X86_REG_RDI, UC_X86_REG_RSI, UC_X86_REG_RDX, UC_X86_REG_RCX, 
                             UC_X86_REG_R8, UC_X86_REG_R9]
                 elif self.compiler == COMPILE_MSVC:
-                    regs = [UC_X86_REG_RCX, UC_X86_REG_RDX, UC_X86_REG_R8, UC_X86_REG_R9]
+                    self.REG_ARGS = [UC_X86_REG_RCX, UC_X86_REG_RDX, UC_X86_REG_R8, UC_X86_REG_R9]
         elif self.arch == UC_ARCH_ARM:
             if self.mode == UC_MODE_ARM:
-                step = 4
+                self.step = 4
+                self.pack_fmt = '<I'
             elif self.mode == UC_MODE_THUMB:
-                step = 2
-            uc.reg_write(UC_ARM_REG_SP, sp)
-            uc.reg_write(UC_ARM_REG_LR, RA)
-            self.RES_REG = UC_ARM_REG_R0
-            regs = [UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3]
+                self.step = 2
+                self.pack_fmt = '<H'
+            self.REG_PC = UC_ARM_REG_PC
+            self.REG_SP = UC_ARM_REG_SP
+            self.REG_RA = UC_ARM_REG_LR
+            self.REG_RES = UC_ARM_REG_R0
+            self.REG_ARGS = [UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3]
         elif self.arch == UC_ARCH_ARM64:
-            step = 8
-            uc.reg_write(UC_ARM64_REG_SP, sp)
-            uc.reg_write(UC_ARM64_REG_X30, RA)
-            self.RES_REG = UC_ARM64_REG_X0
-            regs = [UC_ARM64_REG_X0, UC_ARM64_REG_X1, UC_ARM64_REG_X2, UC_ARM64_REG_X3,
+            self.step = 8 
+            self.pack_fmt = '<Q'
+            self.REG_PC = UC_ARM64_REG_PC
+            self.REG_SP = UC_ARM64_REG_SP
+            self.REG_RA = UC_ARM64_REG_LR
+            self.REG_RES = UC_ARM64_REG_X0
+            self.REG_ARGS = [UC_ARM64_REG_X0, UC_ARM64_REG_X1, UC_ARM64_REG_X2, UC_ARM64_REG_X3,
                     UC_ARM64_REG_X4, UC_ARM64_REG_X5, UC_ARM64_REG_X6, UC_ARM64_REG_X7]
-        
+
+    def _initStackAndArgs(self, uc, RA, args):
+        uc.mem_map(self.stack, (self.ssize+1) * PAGE_ALIGN)
+        sp = self.stack + self.ssize * PAGE_ALIGN        
+        uc.reg_write(self.REG_SP, sp)
+        if self.REG_RA == 0:
+            uc.mem_write(sp, pack(self.pack_fmt, RA))
+        else:
+            uc.reg_write(self.REG_RA, RA)
+
         ## init the arguments
         i = 0
-        while i < len(regs) and i < len(args):
-            uc.reg_write(regs[i], args[i])
+        while i < len(self.REG_ARGS) and i < len(args):
+            uc.reg_write(self.REG_ARGS[i], args[i])
             i += 1
         while i < len(args):
-            sp += step
-            uc.mem_write(sp, args[i])
+            sp += self.step
+            uc.mem_write(sp, pack(self.pack_fmt, args[i]))
             i += 1
 
     def _getBit(self, value, offset):
@@ -139,7 +191,7 @@ class Emu(object):
                 si = uc.reg_read(UC_X86_REG_DI)
                 bp = uc.reg_read(UC_X86_REG_BP)
                 sp = uc.reg_read(UC_X86_REG_SP)
-                ip = uc.reg_read(UC_X86_REG_IP)
+                ip = uc.reg_read(UC_X86_REG_PC)
                 eflags = uc.reg_read(UC_X86_REG_EFLAGS)
                 
                 print("    AX = 0x%x BX = 0x%x CX = 0x%x DX = 0x%x" % (ax, bx, cx, dx))
@@ -221,13 +273,13 @@ class Emu(object):
         for reg, value in self.regs:
             uc.reg_write(reg, value)
 
-    def _emulate(self, startAddr, stopAddr, *args):
+    def _emulate(self, startAddr, stopAddr, args=[]):
         try:
             self.logBuffer = []
             uc = Uc(self.arch, self.mode)
             self.curUC = uc
             
-            self._initStackAndArgs(uc, stopAddr, *args)
+            self._initStackAndArgs(uc, stopAddr, args)
             self._initData(uc)
             self._initRegs(uc)
             
@@ -238,8 +290,7 @@ class Emu(object):
             # add the trace hook
             if self.traceOption & (TRACE_DATA_READ | TRACE_DATA_WRITE) :
                 uc.hook_add(UC_HOOK_MEM_READ | UC_HOOK_MEM_WRITE, self._hook_mem_access)
-            if self.traceOption & TRACE_CODE :
-                uc.hook_add(UC_HOOK_CODE, self._hook_code)
+            uc.hook_add(UC_HOOK_CODE, self._hook_code)
 
             # start emulate
             uc.emu_start(startAddr, stopAddr)
@@ -284,18 +335,27 @@ class Emu(object):
         logs = "\n".join(self.logBuffer)
         print(logs)
 
-    def eFunc(self, address=None, *args):
+    def alt(self, address, func, argc, balance=False):
+        """
+        If call the address, will call the func instead.
+        the arguments of func : func(uc, consoleouput, args)
+        """
+        assert(callable(func))
+        self.altFunc[address] = (func, argc, balance)
+
+    def eFunc(self, address=None, retAddr=None, args=[]):
         if address == None: address = here()
         func = get_func(address)
-        refs = [ref.frm for ref in XrefsTo(func.startEA, 0)]
-        if len(refs) == 0:
-            RA = self.RA
-        else:
-            RA = refs[0] + ItemSize(refs[0])
-        self._emulate(func.startEA, RA, *args)
-        print("Euclation done. Below is the Result:")
-        res = self.curUC.reg_read(self.RES_REG)
-        print(">>> function result = %d" % res)
+        if retAddr == None:
+            refs = [ref.frm for ref in XrefsTo(func.startEA, 0)]
+            if len(refs) != 0:
+                retAddr = refs[0] + ItemSize(refs[0])
+            else:
+                print("Please offer the return address.")
+                return
+        self._emulate(func.startEA, retAddr, args)
+        res = self.curUC.reg_read(self.REG_RES)
+        return res
         
     def eBlock(self, codeStart=None, codeEnd=None):
         if codeStart == None: codeStart = SelStart()
