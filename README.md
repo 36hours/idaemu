@@ -9,8 +9,6 @@ Support architecture:
 - ARM64 (ARMv8)
 - MIPS (developing)
 
-Now it is not support call the library functions.
-
 Install
 -------
 
@@ -48,27 +46,79 @@ Running the idapython scritp:
 ``` python
 from idaemu import *
 a = Emu(UC_ARCH_X86, UC_MODE_64)
-a.eFunc(0x040052D, 7)
+print a.eFunc(0x040052D, None, [7])
 ```
 
 Get the function result:
 ```
-Euclation done. Below is the Result:
->>> function result = 107
+107
 ```
 
 
 Example2
 -------
 
+If there is a library function call inner the function, we couldn't call it directly. We should use `alt` to hook the library function first.
+```
+.text:0000000000400560                 public myadd
+.text:0000000000400560 myadd           proc near               ; CODE XREF: main+27p
+.text:0000000000400560
+.text:0000000000400560 var_8           = dword ptr -8
+.text:0000000000400560 var_4           = dword ptr -4
+.text:0000000000400560
+.text:0000000000400560                 push    rbp
+.text:0000000000400561                 mov     rbp, rsp
+.text:0000000000400564                 sub     rsp, 10h
+.text:0000000000400568                 mov     [rbp+var_4], edi
+.text:000000000040056B                 mov     [rbp+var_8], esi
+.text:000000000040056E                 mov     eax, [rbp+var_8]
+.text:0000000000400571                 mov     edx, [rbp+var_4]
+.text:0000000000400574                 add     eax, edx
+.text:0000000000400576                 mov     esi, eax
+.text:0000000000400578                 mov     edi, offset format ; "a+b=%d\n"
+.text:000000000040057D                 mov     eax, 0
+.text:0000000000400582                 call    _printf
+.text:0000000000400587                 leave
+.text:0000000000400588                 retn
+.text:0000000000400588 myadd           endp
+```
+
+Running the idapython scritp:
+``` python
+from idaemu import *
+
+a = Emu(UC_ARCH_X86, UC_MODE_64)
+
+def myprint(uc, out, args):
+    out.append("this is hook output: %d" % args[1])
+    return 0
+
+myadd_addr = 0x00400560
+printf_addr = 0x00400410 
+a.alt(printf_addr, myprint, 2, False)
+a.eFunc(myadd_addr, None, [1, 7])
+print "---- below is the trace ----"
+a.showTrace()
+```
+
+Get the result:
+```
+---- below is the trace ----
+this is hook output: 8
+```
+Well Done. We can alter every function in this way.
+
+
+Example3
+-------
+
 Sometimes it emulates fail with some abort:
 ``` 
 Python>from idaemu import *
 Python>a = Emu(UC_ARCH_ARM, UC_MODE_THUMB)
-Python>a.eFunc(here(), 4)
+Python>print a.eFunc(here(), 0xbeae, [4])
 #ERROR: Invalid instruction (UC_ERR_INSN_INVALID)
-Euclation done. Below is the Result:
->>> function result = 1048576
+1048576
 ```
 
 Then we can use `setTrace` and `showTrace` for debugging.
@@ -77,10 +127,9 @@ Then we can use `setTrace` and `showTrace` for debugging.
 Python>from idaemu import *
 Python>a = Emu(UC_ARCH_ARM, UC_MODE_THUMB)
 Python>a.setTrace(TRACE_CODE)
-Python>a.eFunc(here(), 4)
+Python>a.eFunc(here(), 0xbeae, [4])
 #ERROR: Invalid instruction (UC_ERR_INSN_INVALID)
-Euclation done. Below is the Result:
->>> function result = 1048576
+1048576
 Python>a.showTrace()
 ### Trace Instruction at 0x13dc, size = 2
 ### Trace Instruction at 0x13de, size = 2
@@ -91,4 +140,4 @@ Python>a.showTrace()
 ### Trace Instruction at 0x19ca, size = 2
 ### Trace Instruction at 0xbeae, size = 2
 ```
-So we found the abort reason (the default RA is wrong)
+So we found the abort reason (the RA is wrong)
