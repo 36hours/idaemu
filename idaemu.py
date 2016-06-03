@@ -313,6 +313,19 @@ class Emu(object):
         for reg in regs:
             print("0x%x" % self.curUC.reg_read(reg))
 
+    def readStack(self, fmt, count):
+        if self.curUC == None:
+            print("current uc is none.")
+            return
+        stackData = []
+        stackPointer = self.curUC.reg_read(self.REG_SP)
+        for i in range(count):
+            dataSize = calcsize(fmt)
+            data = self.curUC.mem_read(stackPointer + i * dataSize, dataSize)
+            st = unpack_from(fmt, data)
+            stackData.append((stackPointer + i * dataSize, st[0]))
+        return stackData
+
     def showData(self, fmt, addr, count=1):
         if self.curUC == None:
             print("current uc is none.")
