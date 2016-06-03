@@ -1,7 +1,7 @@
 idaemu
 ==============
 
-idaemu is an IDA Pro Plugin - use for emulating code in IDA Pro. it is base on [unicorn-engine](http://www.unicorn-engine.org).  
+idaemu is an IDA Pro Plugin - use for emulating code in IDA Pro. It is based on [unicorn-engine](http://www.unicorn-engine.org).  
 
 Support architecture:
 - X86 (16, 32, 64-bit) 
@@ -12,7 +12,7 @@ Support architecture:
 Install
 -------
 
-If you want to use idaemu, you have to install [unicorn-engine](http://www.unicorn-engine.org) and Python binding first. Then use the `idaemu.py` as the idapython script.  
+If you want to use idaemu, you have to install [unicorn-engine](http://www.unicorn-engine.org) and unicorn's python binding first. Then use the `idaemu.py` as the idapython script.  
 
 
 License
