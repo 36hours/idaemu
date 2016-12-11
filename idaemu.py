@@ -379,4 +379,4 @@ class Emu(object):
 
     def eUntilAddress(self, startAddr, stopAddr, args=[], TimeOut=0, Count=0):
         self._emulate(startAddr=startAddr, stopAddr=stopAddr, args=args, TimeOut=TimeOut, Count=Count)
-        self._showRegs()
+        self._showRegs(self.curUC)
