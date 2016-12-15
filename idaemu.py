@@ -266,7 +266,7 @@ class Emu(object):
         for address, data, init in self.data:
             addr = self._alignAddr(address)
             size = PAGE_ALIGN
-            while addr + size < len(data): size += PAGE_ALIGN
+            while size < len(data): size += PAGE_ALIGN
             uc.mem_map(addr, size)
             if init: uc.mem_write(addr, self._getOriginData(addr, size))
             uc.mem_write(address, data)
