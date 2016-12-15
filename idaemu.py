@@ -239,26 +239,27 @@ class Emu(object):
                 print("    R8 = 0x%x R9 = 0x%x R10 = 0x%x R11 = 0x%x R12 = 0x%x " \
                       "R13 = 0x%x R14 = 0x%x R15 = 0x%x" % (r8, r9, r10, r11, r12, r13, r14, r15))
                 print("    RIP = 0x%x" % rip)
-            print("    EFLAGS:")
-            print("    CF=%d PF=%d AF=%d ZF=%d SF=%d TF=%d IF=%d DF=%d OF=%d IOPL=%d " \
-                  "NT=%d RF=%d VM=%d AC=%d VIF=%d VIP=%d ID=%d"
-                  % (self._getBit(eflags, 0),
-                     self._getBit(eflags, 2),
-                     self._getBit(eflags, 4),
-                     self._getBit(eflags, 6),
-                     self._getBit(eflags, 7),
-                     self._getBit(eflags, 8),
-                     self._getBit(eflags, 9),
-                     self._getBit(eflags, 10),
-                     self._getBit(eflags, 11),
-                     self._getBit(eflags, 12) + self._getBit(eflags, 13) * 2,
-                     self._getBit(eflags, 14),
-                     self._getBit(eflags, 16),
-                     self._getBit(eflags, 17),
-                     self._getBit(eflags, 18),
-                     self._getBit(eflags, 19),
-                     self._getBit(eflags, 20),
-                     self._getBit(eflags, 21)))
+            if eflags:
+                print("    EFLAGS:")
+                print("    CF=%d PF=%d AF=%d ZF=%d SF=%d TF=%d IF=%d DF=%d OF=%d IOPL=%d " \
+                      "NT=%d RF=%d VM=%d AC=%d VIF=%d VIP=%d ID=%d"
+                      % (self._getBit(eflags, 0),
+                         self._getBit(eflags, 2),
+                         self._getBit(eflags, 4),
+                         self._getBit(eflags, 6),
+                         self._getBit(eflags, 7),
+                         self._getBit(eflags, 8),
+                         self._getBit(eflags, 9),
+                         self._getBit(eflags, 10),
+                         self._getBit(eflags, 11),
+                         self._getBit(eflags, 12) + self._getBit(eflags, 13) * 2,
+                         self._getBit(eflags, 14),
+                         self._getBit(eflags, 16),
+                         self._getBit(eflags, 17),
+                         self._getBit(eflags, 18),
+                         self._getBit(eflags, 19),
+                         self._getBit(eflags, 20),
+                         self._getBit(eflags, 21)))
         except UcError as e:
             print("#ERROR: %s" % e)
 
@@ -266,7 +267,7 @@ class Emu(object):
         for address, data, init in self.data:
             addr = self._alignAddr(address)
             size = PAGE_ALIGN
-            while addr + size < len(data): size += PAGE_ALIGN
+            while size < len(data): size += PAGE_ALIGN
             uc.mem_map(addr, size)
             if init: uc.mem_write(addr, self._getOriginData(addr, size))
             uc.mem_write(address, data)
