@@ -117,7 +117,7 @@ Sometimes it emulates fail with some abort:
 Python>from idaemu import *
 Python>a = Emu(UC_ARCH_ARM, UC_MODE_THUMB)
 Python>print a.eFunc(here(), 0xbeae, [4])
-#ERROR: Invalid instruction (UC_ERR_INSN_INVALID)
+# ERROR: Invalid instruction (UC_ERR_INSN_INVALID)
 1048576
 ```
 
@@ -128,7 +128,7 @@ Python>from idaemu import *
 Python>a = Emu(UC_ARCH_ARM, UC_MODE_THUMB)
 Python>a.setTrace(TRACE_CODE)
 Python>a.eFunc(here(), 0xbeae, [4])
-#ERROR: Invalid instruction (UC_ERR_INSN_INVALID)
+# ERROR: Invalid instruction (UC_ERR_INSN_INVALID)
 1048576
 Python>a.showTrace()
 ### Trace Instruction at 0x13dc, size = 2
