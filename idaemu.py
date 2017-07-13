@@ -337,6 +337,7 @@ class Emu(object):
             data = self.curUC.mem_read(addr + i * dataSize, dataSize)
             if count > 1: print('    ', end='')
             st = unpack_from(fmt, data)
+            print(st)
             if count > 1: print(',')
         print(']') if count > 1 else print('')
 
