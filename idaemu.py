@@ -80,7 +80,7 @@ class Emu(object):
                     i += 1
 
                 res = func(uc, self.logBuffer, args)
-                if type(res) != int: res = 0
+                if type(res) not in (int,long): res = 0
                 uc.reg_write(self.REG_RES, res)
                 uc.reg_write(self.REG_PC, RA)
                 if balance:
