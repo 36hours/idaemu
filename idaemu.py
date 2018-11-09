@@ -5,7 +5,7 @@ from unicorn.arm_const import *
 from unicorn.arm64_const import *
 from struct import unpack, pack, unpack_from, calcsize
 from idaapi import get_func
-from idc import Qword, GetManyBytes, SelStart, SelEnd, here, ItemSize
+from idc import Qword, GetManyBytes, SelStart, SelEnd, here, ItemSize, GetDisasm
 from idautils import XrefsTo
 
 PAGE_ALIGN = 0x1000  # 4k
@@ -57,7 +57,7 @@ class Emu(object):
 
     def _hook_code(self, uc, address, size, user_data):
         if self.traceOption & TRACE_CODE:
-            self._addTrace("### Trace Instruction at 0x%x, size = %u" % (address, size))
+            self._addTrace("### Trace Instruction at 0x%x, size = %u,  %s" % (address, size, GetDisasm(address)))
         if address in self.altFunc.keys():
             func, argc, balance = self.altFunc[address]
             try:
@@ -239,7 +239,34 @@ class Emu(object):
                 print("    R8 = 0x%x R9 = 0x%x R10 = 0x%x R11 = 0x%x R12 = 0x%x " \
                       "R13 = 0x%x R14 = 0x%x R15 = 0x%x" % (r8, r9, r10, r11, r12, r13, r14, r15))
                 print("    RIP = 0x%x" % rip)
-            if eflags:
+
+            elif self.arch == UC_ARCH_ARM:
+                r0 = uc.reg_read(UC_ARM_REG_R0)
+                r1 = uc.reg_read(UC_ARM_REG_R1)
+                r2 = uc.reg_read(UC_ARM_REG_R2)
+                r3 = uc.reg_read(UC_ARM_REG_R3)
+                r4 = uc.reg_read(UC_ARM_REG_R4)
+                r5 = uc.reg_read(UC_ARM_REG_R5)
+                r6 = uc.reg_read(UC_ARM_REG_R6)
+                r7 = uc.reg_read(UC_ARM_REG_R7)
+                r8 = uc.reg_read(UC_ARM_REG_R8)
+                r9 = uc.reg_read(UC_ARM_REG_R9)
+                r10 = uc.reg_read(UC_ARM_REG_R10)
+
+                fp = uc.reg_read(UC_ARM_REG_FP)  # r11
+                ip = uc.reg_read(UC_ARM_REG_R12)
+                sp = uc.reg_read(UC_ARM_REG_SP)  # r13
+                lr = uc.reg_read(UC_ARM_REG_LR)  # r14
+                pc = uc.reg_read(UC_ARM_REG_PC)  # r15
+                eflags = uc.reg_read(UC_ARM_REG_CPSR)
+
+                print("    r0 = 0x%08x r1 = 0x%08x r2 = 0x%08x r3 = 0x%08x" % (r0, r1, r2, r3))
+                print("    r4 = 0x%08x r5 = 0x%08x r6 = 0x%08x r7 = 0x%08x" % (r4, r5, r6, r7))
+                print("    r8 = 0x%08x r9 = 0x%08x r10 = 0x%08x" % (r8, r9, r10))
+                print("    fp = 0x%08x ip = 0x%08x sp = 0x%08x lr = 0x%08x" % (fp, ip, sp, lr))
+                print("    pc = 0x%08x" % (pc))
+
+            if eflags and self.arch == UC_ARCH_X86:
                 print("    EFLAGS:")
                 print("    CF=%d PF=%d AF=%d ZF=%d SF=%d TF=%d IF=%d DF=%d OF=%d IOPL=%d " \
                       "NT=%d RF=%d VM=%d AC=%d VIF=%d VIP=%d ID=%d"
@@ -260,6 +287,15 @@ class Emu(object):
                          self._getBit(eflags, 19),
                          self._getBit(eflags, 20),
                          self._getBit(eflags, 21)))
+            elif eflags and self.arch == UC_ARCH_ARM:
+                print("    EFLAGS:")
+                print("    CF=%d VF=%d ZF=%d NF=%d TF=%d"
+                      % (self._getBit(eflags, 29),
+                         self._getBit(eflags, 28),
+                         self._getBit(eflags, 30),
+                         self._getBit(eflags, 31),
+                         self._getBit(eflags, 5)))
+
         except UcError as e:
             print("#ERROR: %s" % e)
 
@@ -296,7 +332,11 @@ class Emu(object):
             uc.hook_add(UC_HOOK_CODE, self._hook_code)
 
             # start emulate
-            uc.emu_start(startAddr, stopAddr, timeout=TimeOut, count=Count)
+            if self.mode == UC_MODE_THUMB:
+                # Start at ADDRESS | 1 to indicate THUMB mode.
+                uc.emu_start(startAddr | 1, stopAddr, timeout=TimeOut, count=Count)
+            else:
+                uc.emu_start(startAddr, stopAddr, timeout=TimeOut, count=Count)
         except UcError as e:
             print("#ERROR: %s" % e)
 
