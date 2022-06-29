@@ -184,6 +184,7 @@ class Emu(object):
     def _showRegs(self, uc):
         print(">>> regs:")
         try:
+            eflags = None
             if self.mode == UC_MODE_16:
                 ax = uc.reg_read(UC_X86_REG_AX)
                 bx = uc.reg_read(UC_X86_REG_BX)
